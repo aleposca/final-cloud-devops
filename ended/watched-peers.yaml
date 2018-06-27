@@ -1,0 +1,8 @@
+apiVersion: v1
+data:
+  apm-core-laptop: |
+    ZGDTXPV-7JY4JE4-Y43I4TJ-LJ6K3TI-W3QI2EH-IQKFWXN-AOW6GN2-MDUGEQV
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: watched-peers

@@ -1,0 +1,180 @@
+apiVersion: v1
+data:
+  watcher.py: "import time, requests, re, ntpath, json\nfrom watchdog.observers import
+    Observer\nfrom watchdog.events import FileSystemEventHandler\n\ndef getApiKey():\n
+    \   file=open(\"/config/config.xml\",\"r\")\n    str=file.read()\n\n    pattern
+    = r\"<apikey>(.*?)</apikey>\"\n    apikey = re.findall(pattern, str, flags=0)\n
+    \   return(apikey[0])\n\ndef getFileContent(fpath):\n    f=open(fpath,\"r\")\n
+    \   peerID=f.read()\n    return peerID.rstrip()\n\ndef updateConfig(event):\n
+    \   API_ENDPOINT = \"http://127.0.0.1:8384/rest/system/config\"\n    API_KEY =
+    getApiKey()\n\n    HEADERS = {'X-API-Key':API_KEY}\n    print(HEADERS)\n\n    name=ntpath.basename(event.src_path)\n
+    \   peerID=getFileContent(event.src_path)\n    print(\"NEW DEVICE - \",name, peerID)\n
+    \   newDev = {'autoAcceptFolders': True, 'introducedBy': '', 'maxSendKbps': 0,
+    'skipIntroductionRemovals': False, 'paused': False, 'compression': 'metadata',
+    'name':\n ''+name+'', 'addresses': ['dynamic'], 'maxRecvKbps': 0, 'deviceID':
+    ''+peerID+'', 'certName': '', 'introducer': True, 'allowedNetworks': []}\n\n    response
+    = requests.get(API_ENDPOINT, headers=HEADERS)\n    OBJ = json.loads(response.text)\n
+    \   OBJ[\"devices\"].append(newDev)\n    print(json.dumps(OBJ,separators=(',',
+    ':')))\n    PL = json.dumps(OBJ,separators=(',', ':'))\n    res = requests.post(API_ENDPOINT,
+    data=PL, headers=HEADERS)\n\nclass Watcher:\n    DIRECTORY_TO_WATCH = \"/watched/\"\n\n
+    \   def __init__(self):\n        self.observer = Observer()\n\n    def run(self):\n
+    \       event_handler = Handler()\n        self.observer.schedule(event_handler,
+    self.DIRECTORY_TO_WATCH, recursive=False)\n        self.observer.start()\n        try:\n
+    \           while True:\n                time.sleep(5)\n        except:\n            self.observer.stop()\n
+    \           print(\"Error\")\n\n        self.observer.join()\n\n\nclass Handler(FileSystemEventHandler):\n\n
+    \   @staticmethod\n    def on_any_event(event):\n        if event.is_directory:\n
+    \           return None\n\n        elif event.event_type == 'created':\n            #
+    Take any action here when a file is first created.\n            print(\"Received
+    created event - %s.\" % event.src_path)\n            #doingJob(event)\n            updateConfig(event)
+    \           \n\n        elif event.event_type == 'modified':\n            # Taken
+    any action here when a file is modified.\n            print(\"Received modified
+    event - %s.\" % event.src_path)\n            #doingJob(event)\n            updateConfig(event)\n\nif
+    __name__ == '__main__':\n    #getConfigData()\n    w = Watcher()\n    w.run()\n"
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: watcherfiles
+---
+apiVersion: v1
+data:
+  readme.me: |
+    Generar los PeersID desde configMap
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: watched-peers
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apm-syncth
+  labels:
+    run: apm-syncth
+spec:
+  ports:
+  - port: 8384
+    protocol: TCP
+  selector:
+    run: apm-syncth
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: apm-syncth
+  labels:
+    run: apm-syncth
+spec:
+  selector:
+    matchLabels:
+      run: apm-syncth
+  serviceName: "apm-syncth"
+  template:
+    metadata:
+      generateName: apm-syncth
+      labels:
+        run: apm-syncth
+    spec:
+      initContainers:
+      - name: "chown"
+        image: "busybox:1.25.0"
+        imagePullPolicy: "IfNotPresent"
+        command: ["sh", "-c", "chown -R 911:911 /config"]
+        volumeMounts:
+        - name: sync-data
+          mountPath: "/config"
+      containers:
+        - name: apm-syncth
+          image: linuxserver/syncthing
+          imagePullPolicy: "IfNotPresent"
+          ports:
+            - name: apm-syncth
+              containerPort: 8384
+          volumeMounts:
+            - mountPath: "/config/"
+              name: sync-data
+        - name: apm-watch
+          image: "python:3.6-alpine"
+          imagePullPolicy: "IfNotPresent"
+          command: ["/bin/sh", "-c"]
+          args:
+          - echo starting...;
+            pip install watchdog;
+            pip install requests;
+            python3 /watcherfiles/watcher.py;
+          volumeMounts:
+          - name: sync-data
+            mountPath: "/config/"
+          - name: watcherfiles-vol
+            mountPath: "/watcherfiles/"
+          - name: watched-peers-vol
+            mountPath: "/watched/"
+      volumes:
+      - configMap:
+          name: watcherfiles
+          defaultMode: 0775
+        name: watcherfiles-vol
+      - configMap:
+          name: watched-peers
+          defaultMode: 0777
+        name: watched-peers-vol
+  volumeClaimTemplates:
+   - metadata:
+       name: sync-data
+     spec:
+       accessModes: [ "ReadWriteOnce" ]
+       resources:
+         requests:
+           storage: 1Gi
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  labels:
+    run: apm-syncth
+  annotations:
+    nginx.ingress.kubernetes.io/auth-signin: https://apmsth.kube.um.edu.ar/oauth2/start
+    nginx.ingress.kubernetes.io/auth-url: https://apmsth.kube.um.edu.ar/oauth2/auth
+    #nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    #nginx.ingress.kubernetes.io/secure-backends: "true"
+    #kubernetes.io/ingress.allow-http: "false"
+    #nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    #nginx.ingress.kubernetes.io/lua-resty-waf: "active"
+    #nginx.ingress.kubernetes.io/rewrite-target: /
+    certmanager.k8s.io/acme-challenge-type: http01
+    certmanager.k8s.io/cluster-issuer: letsencrypt-prod
+  name: apm-syncth-ingress
+spec:
+  rules:
+  - host: apmsth.kube.um.edu.ar
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: apm-syncth
+          servicePort: 8384
+      #- path: /oauth2
+      #  backend:
+      #    serviceName: oauth
+      #    servicePort: 4180
+  tls:
+  - hosts:
+    - apmsth.kube.um.edu.ar
+    secretName: web-cert
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: apm-syncth-ingress-oauth
+spec:
+  rules:
+  - host: apmsth.kube.um.edu.ar
+    http:
+      paths:
+      - path: /oauth2
+        backend:
+          serviceName: oauth
+          servicePort: 4180
+  tls:
+  - hosts:
+    - apmsth.kube.um.edu.ar
+    secretName: web-cert
