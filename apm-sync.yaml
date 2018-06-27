@@ -95,8 +95,12 @@ metadata:
   labels:
     run: apm-syncth
   annotations:
-    #nginx.ingress.kubernetes.io/auth-signin: https://apmsth.kube.um.edu.ar/oauth2/start
-    #nginx.ingress.kubernetes.io/auth-url: https://apmsth.kube.um.edu.ar/oauth2/auth
+    nginx.ingress.kubernetes.io/auth-signin: https://apmsth.kube.um.edu.ar/oauth2/start
+    nginx.ingress.kubernetes.io/auth-url: https://apmsth.kube.um.edu.ar/oauth2/auth
+    #nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    #nginx.ingress.kubernetes.io/secure-backends: "true"
+    #kubernetes.io/ingress.allow-http: "false"
+    #nginx.ingress.kubernetes.io/ssl-redirect: "true"
     #nginx.ingress.kubernetes.io/lua-resty-waf: "active"
     #nginx.ingress.kubernetes.io/rewrite-target: /
     certmanager.k8s.io/acme-challenge-type: http01
@@ -111,9 +115,27 @@ spec:
         backend:
           serviceName: apm-syncth
           servicePort: 8384
+      #- path: /oauth2
+      #  backend:
+      #    serviceName: oauth
+      #    servicePort: 4180
+  tls:
+  - hosts:
+    - apmsth.kube.um.edu.ar
+    secretName: web-cert
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: apm-syncth-ingress-oauth
+spec:
+  rules:
+  - host: apmsth.kube.um.edu.ar
+    http:
+      paths:
       - path: /oauth2
         backend:
-          serviceName: oauth2-proxy
+          serviceName: oauth
           servicePort: 4180
   tls:
   - hosts:
