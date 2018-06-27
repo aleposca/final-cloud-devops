@@ -1,4 +1,4 @@
-import time, requests, re, ntpath
+import time, requests, re, ntpath, json
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -24,11 +24,15 @@ def updateConfig(event):
 
     name=ntpath.basename(event.src_path)
     peerID=getFileContent(event.src_path)
-    print("NAME: %s - PEERID: %s",peerID, peerID)
+    print("NEW DEVICE - ",name, peerID)
+    newDev = {'autoAcceptFolders': True, 'introducedBy': '', 'maxSendKbps': 0, 'skipIntroductionRemovals': False, 'paused': False, 'compression': 'metadata', 'name':
+ ''+name+'', 'addresses': ['dynamic'], 'maxRecvKbps': 0, 'deviceID': ''+peerID+'', 'certName': '', 'introducer': True, 'allowedNetworks': []}
 
-    PL = '''
-{"devices":[{"deviceID":"'''+peerID+'''","name":"'''+name+'''","addresses":["dynamic"],"compression":"metadata","certName":"","introducer":false,"skipIntroductionRemovals":false,"introducedBy":"","paused":false,"allowedNetworks":[],"autoAcceptFolders":true,"maxSendKbps":0,"maxRecvKbps":0}]}
-'''
+    response = requests.get(API_ENDPOINT, headers=HEADERS)
+    OBJ = json.loads(response.text)
+    OBJ["devices"].append(newDev)
+    print(json.dumps(OBJ,separators=(',', ':')))
+    PL = json.dumps(OBJ,separators=(',', ':'))
     res = requests.post(API_ENDPOINT, data=PL, headers=HEADERS)
 
 class Watcher:
@@ -71,5 +75,6 @@ class Handler(FileSystemEventHandler):
             updateConfig(event)
 
 if __name__ == '__main__':
+    #getConfigData()
     w = Watcher()
     w.run()
